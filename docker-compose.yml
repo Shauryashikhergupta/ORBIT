@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  orbit-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: orbit-backend:latest
+    container_name: orbit-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ORBIT_ENVIRONMENT=production
+      - ORBIT_AUTH_ENFORCE=True
+      - ORBIT_INITIAL_ADMIN_TOKEN=${ORBIT_INITIAL_ADMIN_TOKEN:-orbit-admin-initial-secret-change-me}
+      - ORBIT_SESSION_TTL_HOURS=24
+      - ORBIT_MAX_UPLOAD_BYTES=10485760
+      - ORBIT_ROUTING_OSRM_URL=https://router.project-osrm.org
+      - SQLITE_DB_PATH=/app/orbit.db
+      - BACKUP_DIR=/app/backups
+    volumes:
+      - orbit_data:/app
+      - orbit_backups:/app/backups
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - orbit-net
+    security_opt:
+      - no-new-privileges:true
+
+  orbit-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: orbit-frontend:latest
+    container_name: orbit-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      orbit-backend:
+        condition: service_healthy
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - orbit-net
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  orbit_data:
+    name: orbit_data
+  orbit_backups:
+    name: orbit_backups
+
+networks:
+  orbit-net:
+    name: orbit-net
+    driver: bridge
